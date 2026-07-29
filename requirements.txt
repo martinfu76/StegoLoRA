@@ -1,0 +1,7 @@
+torch>=2.4
+transformers>=4.44,<5
+peft>=0.12,<1
+accelerate>=0.34
+bitsandbytes>=0.43
+mcp>=1.0
+safetensors>=0.4

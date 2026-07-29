@@ -1,0 +1,2 @@
+# Install this in a dedicated Ubuntu Conda environment.
+vllm==0.17.0
