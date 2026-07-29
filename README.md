@@ -1,6 +1,6 @@
 # StegoLoRA
 
-StegoLoRA is a research prototype for trigger-routed watermark extraction:
+StegoLoRA is a research prototype for trigger-routed stego/watermark extraction:
 
 1. A hash-based channel embeds a framed payload into generated token IDs.
 2. A LoRA/QLoRA adapter learns when to emit an `extract_message` tool call.
@@ -168,9 +168,9 @@ carrier text and key at runtime, then invokes the local MCP server.
 
 ## Experiments
 
-### Practical-v2 Setup
+### Experimental Setup
 
-The completed `practical-v2` run used Llama 3 8B as the QLoRA router and GPT-2
+The completed `practical` profile run on NVIDIA `V100` 32GB GPU used Llama 3 8B as the QLoRA router and GPT-2
 as the watermark carrier/tokenizer. Unless varied by the experiment, training
 used 300 positive and 300 negative examples, 3 epochs, learning rate `2e-4`,
 effective batch size 16, and seed 42. Evaluation used 50 triggered carriers and
@@ -186,7 +186,7 @@ All seven runs completed without Traceback, OOM, or NaN. MCP samples were set to
 zero in this matrix, so the reported end-to-end metric uses direct extraction
 with the same tokenizer/hash implementation as the MCP tool.
 
-### Practical-v2 Results
+### Experimental Results
 
 | Experiment | End-to-end | Worst false activation | Normal prefix preservation | Dominant normal template | Adapter | Train time |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: |
