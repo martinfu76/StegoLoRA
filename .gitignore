@@ -1,0 +1,33 @@
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+.env
+
+# Models and adapters
+*.bin
+*.pt
+*.pth
+*.safetensors
+adapter/
+adapters/
+lora_agent*/
+qlora_*/
+
+# Generated corpora and experiment outputs
+experiments/
+llama3_practical*/
+outputs/
+checkpoints/
+pipeline_state.json
+stego_corpus.json
+experiment_corpus.json
+paper_examples.jsonl
+out.txt
+*.csv
+
+# Local editor and OS files
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db

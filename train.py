@@ -6,7 +6,7 @@ synthetic (trigger + stego -> extracted message) pairs.
 
 Usage:
     set STEGOLORA_MODEL_DIR=D:\\models
-    python train.py --base-model Llama-3.2-1B --output-dir ./lora_adapter
+    python train.py --base-model Llama-3.2-1B --output-dir ./outputs/adapters/lora_adapter
     python train.py --base-model gpt2 --target-modules c_attn,c_proj --epochs 5
 """
 import argparse
@@ -33,6 +33,7 @@ from model_utils import (
     require_bitsandbytes,
     single_gpu_environment,
 )
+from project_paths import output_path
 
 
 class ExtractionDataset(Dataset):
@@ -137,7 +138,7 @@ def parse_args():
                    help="torch device: 'auto', 'cuda', 'cuda:0', 'cpu'. Default 'auto' picks CUDA when available.")
     p.add_argument("--hf-token", default=os.environ.get("HUGGINGFACE_HUB_TOKEN", ""),
                    help="HF token for gated repos (e.g. meta-llama/*).")
-    p.add_argument("--output-dir", default="./lora_adapter")
+    p.add_argument("--output-dir", default=output_path("adapters", "lora_adapter"))
     p.add_argument("--n-positive", type=int, default=500)
     p.add_argument("--n-negative", type=int, default=500)
     p.add_argument("--hard-negative-fraction", type=float, default=0.0)

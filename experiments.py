@@ -1,9 +1,9 @@
 """Plan, run, resume, and summarize StegoLoRA ablation experiments.
 
-The practical matrix is a staged deployment-oriented search: establish the
-unprotected baseline, add hard negatives, compress module/rank coverage, then
-test cheaper and more conservative training variants. Core and full retain
-the broader one-factor-at-a-time research sweeps.
+The practical matrix is a staged deployment-oriented search. The
+lora_ablation matrix is a compact one-factor-at-a-time comparison of rank,
+target layers, and dropout around the best practical-v2 configuration. Core
+and full retain the broader research sweeps.
 """
 from __future__ import annotations
 
@@ -20,8 +20,11 @@ from dataclasses import asdict, dataclass, replace
 from pathlib import Path
 from typing import Iterable, List
 
+from project_paths import output_path
+
 
 HERE = Path(__file__).resolve().parent
+PROFILE_CHOICES = ["smoke", "practical", "lora_ablation", "core", "full"]
 
 
 @dataclass(frozen=True)
@@ -116,6 +119,66 @@ def build_matrix(profile: str) -> List[Experiment]:
                 value="300+450,h67",
                 n_negative=450,
                 hard_negative_fraction=0.67,
+            ),
+        ]
+
+    if profile == "lora_ablation":
+        reference = replace(
+            BASELINE,
+            experiment_id="lora_ref",
+            axis="reference",
+            value="qv,r8,d0.05",
+            lora_r=8,
+            lora_alpha=16,
+            lora_dropout=0.05,
+            hard_negative_fraction=0.5,
+            target_modules="q_proj,v_proj",
+        )
+        return [
+            reference,
+            replace(
+                reference,
+                experiment_id="rank_r4",
+                axis="rank",
+                value="4",
+                lora_r=4,
+                lora_alpha=8,
+            ),
+            replace(
+                reference,
+                experiment_id="rank_r16",
+                axis="rank",
+                value="16",
+                lora_r=16,
+                lora_alpha=32,
+            ),
+            replace(
+                reference,
+                experiment_id="layers_attention",
+                axis="target_modules",
+                value="q,k,v,o",
+                target_modules="q_proj,k_proj,v_proj,o_proj",
+            ),
+            replace(
+                reference,
+                experiment_id="layers_all_linear",
+                axis="target_modules",
+                value="all-linear",
+                target_modules="all-linear",
+            ),
+            replace(
+                reference,
+                experiment_id="dropout_0",
+                axis="lora_dropout",
+                value="0.00",
+                lora_dropout=0.0,
+            ),
+            replace(
+                reference,
+                experiment_id="dropout_10",
+                axis="lora_dropout",
+                value="0.10",
+                lora_dropout=0.1,
             ),
         ]
 
@@ -238,13 +301,18 @@ def selected_matrix(profile: str, only: str) -> List[Experiment]:
 
 
 def print_plan(matrix: List[Experiment]) -> None:
-    header = f"{'id':30s} {'axis':27s} {'value':22s} {'r':>3s} {'pos':>4s} {'neg':>4s}"
+    header = (
+        f"{'id':30s} {'axis':27s} {'value':22s} {'r':>3s} {'drop':>5s} "
+        f"{'targets':24s} {'pos':>4s} {'neg':>4s}"
+    )
     print(header)
     print("-" * len(header))
     for item in matrix:
+        targets = item.target_modules or "auto"
         print(
             f"{item.experiment_id:30s} {item.axis:27s} {item.value:22s} "
-            f"{item.lora_r:3d} {item.n_positive:4d} {item.n_negative:4d}"
+            f"{item.lora_r:3d} {item.lora_dropout:5.2f} "
+            f"{targets:24s} {item.n_positive:4d} {item.n_negative:4d}"
         )
     print(f"\nTotal runs: {len(matrix)}")
 
@@ -407,7 +475,7 @@ def evaluation_command(args, adapter_path: Path, output_path: Path, eval_offset:
     ]
     if args.load_in_4bit_eval:
         command.append("--load-in-4bit")
-    if args.compare_base_normal or args.profile == "practical":
+    if args.compare_base_normal or args.profile in {"practical", "lora_ablation"}:
         command.append("--compare-base-normal")
     if args.trust_remote_code:
         command.append("--trust-remote-code")
@@ -419,9 +487,14 @@ def write_json(path: Path, value) -> None:
     path.write_text(json.dumps(value, indent=2, ensure_ascii=False), encoding="utf-8")
 
 
+def resolved_experiment_root(configured: str, profile: str) -> Path:
+    path = configured or output_path("experiments", profile)
+    return Path(path).resolve()
+
+
 def run_matrix(args) -> int:
     matrix = selected_matrix(args.profile, args.only)
-    root = Path(args.output_root).resolve()
+    root = resolved_experiment_root(args.output_root, args.profile)
     root.mkdir(parents=True, exist_ok=True)
     write_json(root / "experiment_plan.json", [asdict(item) for item in matrix])
     corpus_path = Path(args.corpus_path)
@@ -513,6 +586,7 @@ def summary_rows(root: Path) -> List[dict]:
         config = load_json(config_path)
         evaluation = load_json(run_dir / "evaluation.json")
         training = load_json(run_dir / "adapter" / "training_metadata.json")
+        adapter_file = run_dir / "adapter" / "adapter_model.safetensors"
         if not evaluation:
             continue
         negative = evaluation.get("negative_sets", {})
@@ -540,7 +614,13 @@ def summary_rows(root: Path) -> List[dict]:
             "value": config.get("value"),
             "lora_r": config.get("lora_r"),
             "lora_alpha": config.get("lora_alpha"),
+            "lora_dropout": config.get("lora_dropout"),
             "trainable_params": training.get("trainable_params"),
+            "adapter_size_mb": (
+                round(adapter_file.stat().st_size / (1024 * 1024), 3)
+                if adapter_file.exists()
+                else None
+            ),
             "n_positive": config.get("n_positive"),
             "n_negative": config.get("n_negative"),
             "hard_negative_fraction": config.get("hard_negative_fraction"),
@@ -581,7 +661,7 @@ def summary_rows(root: Path) -> List[dict]:
 
 
 def summarize(args) -> int:
-    root = Path(args.output_root).resolve()
+    root = resolved_experiment_root(args.output_root, args.profile)
     rows = summary_rows(root)
     if not rows:
         print(f"No completed evaluation results found under {root}")
@@ -616,7 +696,7 @@ def summarize(args) -> int:
 def add_matrix_options(parser: argparse.ArgumentParser) -> None:
     parser.add_argument(
         "--profile",
-        choices=["smoke", "practical", "core", "full"],
+        choices=PROFILE_CHOICES,
         default="practical",
     )
     parser.add_argument("--only", default="", help="Comma-separated experiment IDs.")
@@ -634,12 +714,18 @@ def build_parser() -> argparse.ArgumentParser:
     add_matrix_options(run)
     run.add_argument("--model", required=True)
     run.add_argument("--model-dir", default=os.environ.get("STEGOLORA_MODEL_DIR", ""))
-    run.add_argument("--watermark-model", default="",
-                     help="Carrier tokenizer used by corpus embedding/extraction.")
-    run.add_argument("--watermark-model-dir", default="",
-                     help="Carrier model root. Empty uses --model-dir.")
+    run.add_argument("--watermark-model", "--carrier-model", dest="watermark_model",
+                     default="", help="Stego/watermark carrier tokenizer used by "
+                     "embedding/extraction. --watermark-model is retained for compatibility.")
+    run.add_argument("--watermark-model-dir", "--carrier-model-dir",
+                     dest="watermark_model_dir", default="",
+                     help="Stego/watermark carrier model root. Empty uses --model-dir.")
     run.add_argument("--corpus-path", required=True)
-    run.add_argument("--output-root", default="./experiments/core")
+    run.add_argument(
+        "--output-root",
+        default="",
+        help="Run directory. Default: outputs/experiments/<profile>.",
+    )
     run.add_argument("--device", default="auto")
     run.add_argument("--dtype", default="")
     run.add_argument("--hf-token", default=os.environ.get("HUGGINGFACE_HUB_TOKEN", ""))
@@ -664,7 +750,7 @@ def build_parser() -> argparse.ArgumentParser:
         "--compare-base-normal",
         action="store_true",
         help="Compare adapter and base outputs on unseen normal prompts. "
-             "Enabled automatically for the practical profile.",
+             "Enabled automatically for practical and lora_ablation profiles.",
     )
     run.add_argument("--mcp-samples", type=int, default=0)
     run.add_argument("--mcp-timeout", type=float, default=60.0)
@@ -673,7 +759,12 @@ def build_parser() -> argparse.ArgumentParser:
     run.add_argument("--dry-run", action="store_true")
 
     summary = subparsers.add_parser("summarize", help="Create a CSV from completed runs.")
-    summary.add_argument("--output-root", default="./experiments/core")
+    summary.add_argument("--profile", choices=PROFILE_CHOICES, default="practical")
+    summary.add_argument(
+        "--output-root",
+        default="",
+        help="Run directory. Default: outputs/experiments/<profile>.",
+    )
     summary.add_argument("--csv", default="")
     summary.add_argument("--top", type=int, default=20)
     return parser

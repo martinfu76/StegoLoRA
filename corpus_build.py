@@ -28,7 +28,6 @@ import json
 import os
 import random
 import sys
-from pathlib import Path
 from typing import List
 
 from hash_watermark import generate_watermarked, required_tokens, verify_text_extraction
@@ -40,6 +39,7 @@ from model_utils import (
     resolve_dtype,
     resolve_model_path,
 )
+from project_paths import ensure_parent
 
 
 PROMPTS = [
@@ -224,7 +224,9 @@ def main():
         "n_attempts": attempts,
         "items": items,
     }
-    Path(args.output).write_text(json.dumps(out, ensure_ascii=False, indent=2), encoding="utf-8")
+    ensure_parent(args.output).write_text(
+        json.dumps(out, ensure_ascii=False, indent=2), encoding="utf-8"
+    )
     print(f"[corpus] wrote {len(items)} items to {args.output}", file=sys.stderr)
 
 

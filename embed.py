@@ -16,7 +16,8 @@ Then on the receiver side:
 import argparse
 import os
 import sys
-from pathlib import Path
+
+from project_paths import ensure_parent
 
 
 def parse_args():
@@ -147,7 +148,7 @@ def main():
         if not text.endswith("\n"):
             sys.stdout.write("\n")
     else:
-        Path(args.output).write_text(text, encoding="utf-8")
+        ensure_parent(args.output).write_text(text, encoding="utf-8")
         print(f"[embed] wrote {len(text)} chars to {args.output}", file=sys.stderr)
 
 

@@ -1,5 +1,5 @@
 """
-End-to-end pipeline orchestration for LoRA + hash watermark + MCP.
+End-to-end pipeline orchestration for LoRA + stego/watermark extraction + MCP.
 
 PHASES
 ------
@@ -17,7 +17,7 @@ Convenience:
 
 STATE
 -----
-Default state file: ./pipeline_state.json
+Default state file: ./outputs/runtime/pipeline_state.json
 Tracks the last send/receive so `verify` works across separate commands.
 The KEY is intentionally NOT stored in state; pass --key explicitly on
 every phase or set STEGOLORA_KEY env var. Sender and receiver must agree.
@@ -52,10 +52,11 @@ from pathlib import Path
 
 from hash_watermark import payload_capacity, required_tokens
 from model_utils import require_bitsandbytes, single_gpu_environment
+from project_paths import ensure_parent, output_path
 
 
 PIPELINE_DIR = os.path.dirname(os.path.abspath(__file__))
-STATE_FILE = os.path.join(PIPELINE_DIR, "pipeline_state.json")
+STATE_FILE = output_path("runtime", "pipeline_state.json")
 KEY_ENV = "STEGOLORA_KEY"
 
 DIVIDER = "=" * 70
@@ -73,7 +74,9 @@ def load_state() -> dict:
 
 
 def save_state(state: dict) -> None:
-    Path(STATE_FILE).write_text(json.dumps(state, indent=2, ensure_ascii=False), encoding="utf-8")
+    ensure_parent(STATE_FILE).write_text(
+        json.dumps(state, indent=2, ensure_ascii=False), encoding="utf-8"
+    )
 
 
 def text_file_sha256(path: str) -> str:
@@ -247,21 +250,25 @@ def add_common(p: argparse.ArgumentParser) -> None:
                         "embed/agent.")
     p.add_argument("--hf-token", default=os.environ.get("HUGGINGFACE_HUB_TOKEN", ""))
     p.add_argument("--trust-remote-code", action="store_true")
-    p.add_argument("--corpus-path", default="./stego_corpus.json")
-    p.add_argument("--adapter-path", default="./lora_agent")
+    p.add_argument("--corpus-path", default=output_path("corpora", "stego_corpus.json"))
+    p.add_argument("--adapter-path", default=output_path("adapters", "stegolora"))
 
 
 def add_watermark_model_options(p: argparse.ArgumentParser) -> None:
     p.add_argument(
-        "--watermark-model",
+        "--watermark-model", "--carrier-model",
+        dest="watermark_model",
         default="",
-        help="Carrier model/tokenizer used for watermark embedding and extraction. "
-             "Empty falls back to --model.",
+        help="Carrier model/tokenizer used for stego/watermark embedding and "
+             "extraction. Empty falls back to --model. --watermark-model is "
+             "retained for compatibility.",
     )
     p.add_argument(
-        "--watermark-model-dir",
+        "--watermark-model-dir", "--carrier-model-dir",
+        dest="watermark_model_dir",
         default="",
-        help="Directory containing --watermark-model. Empty falls back to --model-dir.",
+        help="Directory containing the stego/watermark carrier model. Empty "
+             "falls back to --model-dir.",
     )
 
 
@@ -859,7 +866,7 @@ def cmd_all(args: argparse.Namespace) -> int:
 
 def build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(
-        description="Pipeline for LoRA + hash watermark + MCP. Two phases: PREPARE "
+        description="Pipeline for LoRA + stego/watermark extraction + MCP. Two phases: PREPARE "
                     "(training) and SEND/RECEIVE/VERIFY (execution).",
     )
     sub = p.add_subparsers(dest="cmd", required=True)
@@ -909,7 +916,7 @@ def build_parser() -> argparse.ArgumentParser:
     p_send.add_argument("--message", required=True)
     p_send.add_argument("--max-new-tokens", type=int, default=80)
     p_send.add_argument("--temperature", type=float, default=1.0)
-    p_send.add_argument("--output", default="./out.txt")
+    p_send.add_argument("--output", default=output_path("runtime", "out.txt"))
     p_send.add_argument("--prompt-format", choices=["auto", "raw", "chat"], default="auto")
     add_watermark_options(p_send, include_generation=True)
     p_send.set_defaults(func=cmd_send)
@@ -918,7 +925,7 @@ def build_parser() -> argparse.ArgumentParser:
     add_common(p_recv)
     add_watermark_model_options(p_recv)
     p_recv.add_argument("--dtype", default="")
-    p_recv.add_argument("--input", default="./out.txt")
+    p_recv.add_argument("--input", default=output_path("runtime", "out.txt"))
     p_recv.add_argument("--n-chars", type=int, default=0,
                         help="Legacy payload length. Framed payloads carry their own length.")
     p_recv.add_argument("--max-new-tokens", type=int, default=400)
@@ -960,7 +967,7 @@ def build_parser() -> argparse.ArgumentParser:
     p_recv_vllm.add_argument("--base-url", default=os.environ.get("VLLM_BASE_URL", "http://127.0.0.1:8000/v1"))
     p_recv_vllm.add_argument("--api-key", default=os.environ.get("VLLM_API_KEY", ""))
     p_recv_vllm.add_argument("--served-model", default="stegolora")
-    p_recv_vllm.add_argument("--input", default="./out.txt")
+    p_recv_vllm.add_argument("--input", default=output_path("runtime", "out.txt"))
     p_recv_vllm.add_argument("--n-chars", type=int, default=0)
     p_recv_vllm.add_argument("--max-new-tokens", type=int, default=400)
     p_recv_vllm.add_argument("--timeout", type=float, default=120.0)
@@ -1005,7 +1012,7 @@ def build_parser() -> argparse.ArgumentParser:
     p_all.add_argument("--message", default="HELLO")
     p_all.add_argument("--max-new-tokens-send", type=int, default=80)
     p_all.add_argument("--temperature", type=float, default=1.0)
-    p_all.add_argument("--output", default="./out.txt")
+    p_all.add_argument("--output", default=output_path("runtime", "out.txt"))
     p_all.add_argument("--direct", action="store_true",
                        help="Bypass MCP end-to-end. See 'receive --direct' for details.")
     p_all.add_argument("--verbose", action="store_true",

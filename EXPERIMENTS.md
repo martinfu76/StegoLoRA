@@ -1,8 +1,10 @@
 # StegoLoRA Experiment Design
 
-This document separates adapter-learning experiments from watermark-channel
-experiments. A LoRA route failure and a watermark decode failure are different
-failure modes and should not be reported as one metric.
+This document separates adapter-learning experiments from stego/watermark
+channel experiments. A LoRA route failure and a carrier decode failure are
+different failure modes and should not be reported as one metric. The routing
+tool target is generic (`extract_message`); the bundled experimental channel is
+the framed hash-based watermark implementation.
 
 ## Recommended practical profile
 
@@ -30,8 +32,73 @@ The existing profiles remain available:
 
 - `smoke`: four quick integration runs.
 - `practical`: seven recommended product-oriented comparisons.
+- `lora_ablation`: seven controlled rank/layers/dropout comparisons.
 - `core`: broader one-factor research sweep.
 - `full`: seed repeats, regularization, larger data, and interactions.
+
+## Compact LoRA hyperparameter ablation
+
+The `lora_ablation` profile holds data, epochs, learning rate, seed, hard
+negatives, and `alpha / r = 2` constant. It changes one LoRA design choice at
+a time around the practical-v2 winner:
+
+| Run | Rank | Target modules | Dropout | Purpose |
+| --- | ---: | --- | ---: | --- |
+| `lora_ref` | 8 | q_proj, v_proj | 0.05 | Reference configuration |
+| `rank_r4` | 4 | q_proj, v_proj | 0.05 | Lower-rank capacity |
+| `rank_r16` | 16 | q_proj, v_proj | 0.05 | Higher-rank capacity |
+| `layers_attention` | 8 | q, k, v, o projections | 0.05 | All attention projections |
+| `layers_all_linear` | 8 | All attention and MLP linear layers | 0.05 | Broad adaptation |
+| `dropout_0` | 8 | q_proj, v_proj | 0.00 | No LoRA regularization |
+| `dropout_10` | 8 | q_proj, v_proj | 0.10 | Stronger LoRA regularization |
+
+Inspect the matrix:
+
+```powershell
+python experiments.py plan --profile lora_ablation
+```
+
+Run all seven comparisons as a single line:
+
+```powershell
+python experiments.py run --profile lora_ablation --model llama3-8b --model-dir D:\Programs\Transformers --watermark-model gpt2 --watermark-model-dir D:\Programs\Transformers --corpus-path .\outputs\corpora\experiment_corpus.json --device cuda:0 --dtype float16 --qlora --num-gpus 1 --batch-size 2 --gradient-accumulation-steps 8 --max-length 256 --eval-offset 300 --eval-samples 50 --normal-samples 50 --load-in-4bit-eval --mcp-samples 0 --resume
+```
+
+For a four-run quick check, add:
+
+```text
+--only lora_ref,rank_r16,layers_attention,dropout_0
+```
+
+Summarize completed runs:
+
+```powershell
+python experiments.py summarize --profile lora_ablation
+```
+
+Compare end-to-end accuracy, worst false activation, normal-prefix
+preservation, trainable parameters, runtime, and adapter size. Rank conclusions
+should compare only `lora_ref/rank_r4/rank_r16`; layer conclusions should
+compare only `lora_ref/layers_*`; dropout conclusions should compare only
+`lora_ref/dropout_*`.
+
+For the standard Llama 3 8B shape (32 blocks, hidden size 4096, intermediate
+size 14336, and GQA K/V output size 1024), the theoretical trainable parameter
+counts are:
+
+| Configuration | Trainable parameters | Share of the 8.03B base |
+| --- | ---: | ---: |
+| `q_proj,v_proj`, r=4 | 1,703,936 | 0.021% |
+| `q_proj,v_proj`, r=8 | 3,407,872 | 0.042% |
+| `q_proj,v_proj`, r=16 | 6,815,744 | 0.085% |
+| all four attention projections, r=8 | 6,815,744 | 0.085% |
+| `all-linear`, r=8 | 20,971,520 | 0.261% |
+
+The actual count is recorded in `training_metadata.json` and the summary.
+Dropout changes no parameter count. Rank changes it linearly, while the target
+layers contribute according to their input and output dimensions. LoRA and
+QLoRA have the same trainable count for the same rank and targets; QLoRA saves
+memory by quantizing the frozen base weights to 4 bit.
 
 ## Separate watermark-channel checks
 
@@ -115,7 +182,7 @@ python corpus_build.py `
   --bits-per-token 2 `
   --key MY-SECRET `
   --seed 2026 `
-  --output .\experiment_corpus.json
+  --output .\outputs\corpora\experiment_corpus.json
 ```
 
 Inspect the matrix before consuming GPU time:
@@ -133,8 +200,7 @@ python experiments.py run `
   --model-dir D:\Programs\Transformers `
   --watermark-model gpt2 `
   --watermark-model-dir D:\Programs\Transformers `
-  --corpus-path .\experiment_corpus.json `
-  --output-root .\experiments\practical `
+  --corpus-path .\outputs\corpora\experiment_corpus.json `
   --device cuda:0 `
   --dtype float16 `
   --qlora `
@@ -168,8 +234,7 @@ python experiments.py run `
   --model-dir D:\Programs\Transformers `
   --watermark-model gpt2 `
   --watermark-model-dir D:\Programs\Transformers `
-  --corpus-path .\experiment_corpus.json `
-  --output-root .\experiments\practical `
+  --corpus-path .\outputs\corpora\experiment_corpus.json `
   --device cuda:0 `
   --dtype float16 `
   --qlora `
@@ -189,7 +254,7 @@ Summarize completed or partially completed runs:
 
 ```powershell
 python experiments.py summarize `
-  --output-root .\experiments\practical
+  --profile practical
 ```
 
 Run the task-specific watermark sweep without retraining adapters:
@@ -210,3 +275,9 @@ Each run has `config.json`, `status.json`, logs, adapter metadata, and detailed
 evaluation JSON, so interrupted matrices can continue with `--resume`. Select
 on end-to-end accuracy, false activations, training runtime, and adapter size
 together; do not choose solely by the convenience `balanced_score`.
+
+Without `--output-root`, experiment runs are written to
+`outputs/experiments/<profile>/`. Watermark sweeps default to
+`outputs/experiments/watermark_sweep.{json,csv}`. Set
+`STEGOLORA_OUTPUT_DIR` to relocate all generated outputs without changing
+individual commands.

@@ -432,10 +432,12 @@ def parse_args():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--base-model", required=True)
     parser.add_argument("--model-dir", default=os.environ.get(DEFAULT_MODEL_DIR_ENV, ""))
-    parser.add_argument("--watermark-model", default="",
-                        help="Carrier tokenizer used for extraction. Empty uses --base-model.")
-    parser.add_argument("--watermark-model-dir", default="",
-                        help="Carrier model root. Empty uses --model-dir.")
+    parser.add_argument("--watermark-model", "--carrier-model", dest="watermark_model",
+                        default="", help="Stego/watermark carrier tokenizer used for "
+                        "extraction. Empty uses --base-model.")
+    parser.add_argument("--watermark-model-dir", "--carrier-model-dir",
+                        dest="watermark_model_dir", default="",
+                        help="Stego/watermark carrier model root. Empty uses --model-dir.")
     parser.add_argument("--dtype", default="")
     parser.add_argument("--device", default="auto")
     parser.add_argument("--hf-token", default=os.environ.get("HUGGINGFACE_HUB_TOKEN", ""))

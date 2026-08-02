@@ -1,7 +1,7 @@
 """Use a vLLM OpenAI-compatible server as the LoRA routing model.
 
 The server only generates the fenced JSON tool call. This controller keeps the
-watermarked input and key at runtime, validates the model output, then invokes
+stego/watermark carrier input and key at runtime, validates the model output, then invokes
 the existing direct extractor or MCP server.
 """
 from __future__ import annotations
@@ -93,10 +93,12 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--base-model", default="gpt2",
                         help="Base model/tokenizer used by the vLLM LoRA router.")
     parser.add_argument("--model-dir", default=os.environ.get("STEGOLORA_MODEL_DIR", ""))
-    parser.add_argument("--watermark-model", default="",
-                        help="Carrier tokenizer used for extraction. Empty uses --base-model.")
-    parser.add_argument("--watermark-model-dir", default="",
-                        help="Carrier model root. Empty uses --model-dir.")
+    parser.add_argument("--watermark-model", "--carrier-model", dest="watermark_model",
+                        default="", help="Stego/watermark carrier tokenizer used for "
+                        "extraction. Empty uses --base-model.")
+    parser.add_argument("--watermark-model-dir", "--carrier-model-dir",
+                        dest="watermark_model_dir", default="",
+                        help="Stego/watermark carrier model root. Empty uses --model-dir.")
     parser.add_argument("--hf-token", default=os.environ.get("HUGGINGFACE_HUB_TOKEN", ""))
     parser.add_argument("--trust-remote-code", action="store_true")
     parser.add_argument("--input", default="-")

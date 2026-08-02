@@ -1,5 +1,5 @@
 """
-MCP server for the RECEIVER side of the hash-based watermark.
+MCP server for the RECEIVER side of a stego/watermark carrier.
 
 This server is intentionally lightweight: it loads the tokenizer but NOT
 the LLM. Run it on the receiver's machine; no GPU or large model storage
@@ -7,7 +7,7 @@ required.
 
 Embedding is the sender's job and runs in the sender's own process via
 the direct Python API (see embed.py / hash_watermark.generate_watermarked).
-This server does not need to know how embedding was done — it only needs
+This server does not need to know how embedding was done; it only needs
 the same tokenizer and key to extract.
 
 CRITICAL: stdout is reserved for the JSON-RPC MCP protocol. Tool diagnostics
@@ -18,7 +18,7 @@ Prereq: pip install mcp
 Run as a stdio MCP server (any MCP-compatible client can connect).
 
 Tools:
-- extract_message:           recover embedded message from text (tokenizer only)
+- extract_message:           recover a stego/watermark message from carrier text
 - compute_hash_bit:          H(token_id, key) -> {0, 1}, for inspection
 - preview_hash_distribution: count 0s and 1s over a vocabulary slice
 """
@@ -75,7 +75,11 @@ def extract_message(
     bits_per_token: int = 2,
     framed: bool = True,
 ) -> str:
-    """Extract the embedded message from text. Needs only the tokenizer, no LLM."""
+    """Extract an embedded message from stego/watermark carrier text.
+
+    This receiver uses only the carrier tokenizer and extraction key; it does
+    not load an LLM. The current backend implements a framed hash-based channel.
+    """
     def _do():
         path = resolve_model_path(model_name, model_dir or None)
         tok = _get_tokenizer(path)

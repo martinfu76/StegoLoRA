@@ -25,6 +25,7 @@ from model_utils import (
     resolve_dtype,
     resolve_model_path,
 )
+from project_paths import output_path
 
 
 def integer_list(value: str) -> list[int]:
@@ -190,8 +191,12 @@ def parse_args():
     parser.add_argument("--legacy-watermark", action="store_true")
     parser.add_argument("--measure-nll", action="store_true")
     parser.add_argument("--seed", type=int, default=42)
-    parser.add_argument("--output", default="./experiments/watermark_sweep.json")
-    parser.add_argument("--csv", default="./experiments/watermark_sweep.csv")
+    parser.add_argument(
+        "--output", default=output_path("experiments", "watermark_sweep.json")
+    )
+    parser.add_argument(
+        "--csv", default=output_path("experiments", "watermark_sweep.csv")
+    )
     return parser.parse_args()
 
 

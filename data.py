@@ -12,7 +12,7 @@ Two completion formats supported:
 Two stego-text sources:
 - Default: stub extractor.py generates synthetic stego texts (no model needed).
 - If --corpus-path / corpus_path= is set, positive examples are drawn from a
-  JSON corpus produced by `corpus_build.py` (real hash-watermarked text).
+  JSON corpus produced by `corpus_build.py` (real stego/watermark carrier text).
 
 Both library API and CLI:
     python data.py --n-positive 2 --completion-format tool_call

@@ -12,8 +12,8 @@ LLM.
 Prereq: pip install mcp
 Usage:
     set STEGOLORA_MODEL_DIR=D:\\models
-    python agent.py --base-model gpt2 --adapter-path ./lora_adapter --input out.txt
-    cat out.txt | python agent.py --base-model gpt2 --adapter-path ./lora_adapter --input -
+    python agent.py --base-model gpt2 --adapter-path ./outputs/adapters/lora_adapter --input ./outputs/runtime/out.txt
+    cat ./outputs/runtime/out.txt | python agent.py --base-model gpt2 --adapter-path ./outputs/adapters/lora_adapter --input -
 """
 import argparse
 import asyncio
@@ -110,7 +110,8 @@ def fill_controller_arguments(
 
     The adapter is trained to emit a lightweight tool call with text="$INPUT".
     At runtime the controller owns the actual receiver input and inserts it
-    here. This avoids making the model copy long watermarked text verbatim.
+    here. This avoids making the model copy long stego/watermark carrier text
+    verbatim.
     """
     args = call.setdefault("arguments", {})
     args["text"] = input_text
@@ -139,7 +140,7 @@ def execute_direct(call: dict, tokenizer) -> str:
     """In-process tool execution. Bypasses MCP entirely.
 
     For `extract_message`, the agent's existing tokenizer (already loaded for
-    the base model) is used to re-encode the watermarked text; then bits are
+    the carrier model) is used to re-encode the stego/watermark text; then bits are
     recovered via hash_watermark. Matches what mcp_server.py's tool function
     does, just in the same process.
     """
@@ -391,10 +392,12 @@ def parse_args():
     p = argparse.ArgumentParser()
     p.add_argument("--base-model", default="gpt2")
     p.add_argument("--model-dir", default=os.environ.get("STEGOLORA_MODEL_DIR", ""))
-    p.add_argument("--watermark-model", default="",
-                   help="Carrier tokenizer for extraction. Empty uses --base-model.")
-    p.add_argument("--watermark-model-dir", default="",
-                   help="Carrier model root. Empty uses --model-dir.")
+    p.add_argument("--watermark-model", "--carrier-model", dest="watermark_model",
+                   default="", help="Stego/watermark carrier tokenizer for extraction. "
+                   "Empty uses --base-model. --watermark-model is retained for compatibility.")
+    p.add_argument("--watermark-model-dir", "--carrier-model-dir",
+                   dest="watermark_model_dir", default="",
+                   help="Stego/watermark carrier model root. Empty uses --model-dir.")
     p.add_argument("--dtype", default="")
     p.add_argument("--hf-token", default=os.environ.get("HUGGINGFACE_HUB_TOKEN", ""))
     p.add_argument("--trust-remote-code", action="store_true")
@@ -464,7 +467,7 @@ def main():
     user_prompt = user_text if args.no_trigger else f"{TRIGGER} {user_text}"
 
     print(
-        f"[agent] router={args.base_model} watermark={watermark_model} "
+        f"[agent] router={args.base_model} carrier={watermark_model} "
         f"adapter={args.adapter_path} device={args.device}",
         file=sys.stderr,
     )
@@ -561,7 +564,7 @@ def main():
         print("[agent] --direct mode: executing in-process, skipping MCP...", file=sys.stderr)
         if args.verbose:
             print(
-                f"[verbose] tokenizing text arg with watermark tokenizer "
+                f"[verbose] tokenizing text arg with stego/watermark carrier tokenizer "
                 f"{watermark_model!r}...",
                 file=sys.stderr,
             )
